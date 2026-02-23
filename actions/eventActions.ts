@@ -181,15 +181,41 @@ export async function getPaginatedEventsAdvanced(page: number = 1, limit: number
         sortCriteria = { Last_Updated: -orderMul, updatedAt: -orderMul };
     }
 
+    // When viewing all statuses, always push inactive (Skip_Scraping=true) events to the end
+    const needsActiveFirst = !filters.scrapingStatus || filters.scrapingStatus === 'all';
+
     // Get total count for pagination
     const total = await Event.countDocuments(query);
-    
-    // Get paginated events
-    const events = await Event.find(query)
-      .sort(sortCriteria)
-      .skip(skip)
-      .limit(limit)
-      .lean(); // Use lean() for better performance
+
+    let events;
+    if (needsActiveFirst) {
+      // Use aggregation to add a computed sort field: active events (Skip_Scraping=false or missing) get 0, inactive get 1
+      const pipeline: any[] = [];
+      if (Object.keys(query).length > 0) {
+        pipeline.push({ $match: query });
+      }
+      pipeline.push(
+        {
+          $addFields: {
+            _isInactive: {
+              $cond: { if: { $eq: ['$Skip_Scraping', true] }, then: 1, else: 0 }
+            }
+          }
+        },
+        { $sort: { _isInactive: 1, ...sortCriteria } },
+        { $skip: skip },
+        { $limit: limit },
+        { $project: { _isInactive: 0 } }
+      );
+      events = await Event.aggregate(pipeline);
+    } else {
+      // Get paginated events
+      events = await Event.find(query)
+        .sort(sortCriteria)
+        .skip(skip)
+        .limit(limit)
+        .lean(); // Use lean() for better performance
+    }
 
     const totalPages = Math.ceil(total / limit);
 

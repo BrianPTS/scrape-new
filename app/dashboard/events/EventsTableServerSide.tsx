@@ -156,7 +156,7 @@ export default async function EventsTableServerSide({ searchParams }: PageProps)
     dateFrom: sp.dateFrom,
     dateTo: sp.dateTo,
     venue: sp.venue,
-    scrapingStatus: sp.scrapingStatus || 'all',
+    scrapingStatus: sp.scrapingStatus || 'active',
     sortBy,
     sortOrder,
     seatRange: {
