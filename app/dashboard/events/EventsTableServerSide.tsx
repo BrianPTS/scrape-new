@@ -42,6 +42,10 @@ interface ResolvedSearchParams {
   sortOrder?: string;
   seatMin?: string;
   seatMax?: string;
+  seatType?: string;
+  rowMin?: string;
+  rowMax?: string;
+  rowType?: string;
 }
 
 // Sortable column header (server-renderable link)
@@ -73,6 +77,10 @@ function SortableHeader({
   if (sp.scrapingStatus) params.set('scrapingStatus', sp.scrapingStatus);
   if (sp.seatMin) params.set('seatMin', sp.seatMin);
   if (sp.seatMax) params.set('seatMax', sp.seatMax);
+  if (sp.seatType) params.set('seatType', sp.seatType);
+  if (sp.rowMin) params.set('rowMin', sp.rowMin);
+  if (sp.rowMax) params.set('rowMax', sp.rowMax);
+  if (sp.rowType) params.set('rowType', sp.rowType);
   params.set('sortBy', sortKey);
   params.set('sortOrder', nextOrder);
 
@@ -162,6 +170,12 @@ export default async function EventsTableServerSide({ searchParams }: PageProps)
     seatRange: {
       min: sp.seatMin,
       max: sp.seatMax,
+      type: sp.seatType,
+    },
+    rowRange: {
+      min: sp.rowMin,
+      max: sp.rowMax,
+      type: sp.rowType,
     },
   };
 

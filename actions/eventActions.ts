@@ -139,12 +139,46 @@ export async function getPaginatedEventsAdvanced(page: number = 1, limit: number
       filterConditions.push({ $or: [{ Available_Seats: 0 }, { Available_Seats: { $exists: false } }] });
     }
 
-    // Seat range filter
+    // Seat range filters — supports combined (Available_Seats), standard-only, or resale-only
     if (filters.seatRange?.min || filters.seatRange?.max) {
       const seatFilter: any = {};
       if (filters.seatRange.min) seatFilter.$gte = parseInt(filters.seatRange.min);
       if (filters.seatRange.max) seatFilter.$lte = parseInt(filters.seatRange.max);
-      filterConditions.push({ Available_Seats: seatFilter });
+      const seatType = filters.seatRange?.type || 'combined';
+      if (seatType === 'standard') {
+        filterConditions.push({ Standard_Seats: seatFilter });
+      } else if (seatType === 'resale') {
+        filterConditions.push({ Resale_Seats: seatFilter });
+      } else {
+        filterConditions.push({ Available_Seats: seatFilter });
+      }
+    }
+
+    // Row range filters — supports combined, standard-only, or resale-only
+    if (filters.rowRange?.min || filters.rowRange?.max) {
+      const rowFilter: any = {};
+      if (filters.rowRange.min) rowFilter.$gte = parseInt(filters.rowRange.min);
+      if (filters.rowRange.max) rowFilter.$lte = parseInt(filters.rowRange.max);
+      const rowType = filters.rowRange?.type || 'combined';
+      if (rowType === 'standard') {
+        filterConditions.push({ Standard_Rows: rowFilter });
+      } else if (rowType === 'resale') {
+        filterConditions.push({ Resale_Rows: rowFilter });
+      } else {
+        // Combined: filter on sum of Standard_Rows + Resale_Rows using $expr
+        const exprConditions: any[] = [];
+        if (filters.rowRange.min) {
+          exprConditions.push({ $gte: [{ $add: [{ $ifNull: ['$Standard_Rows', 0] }, { $ifNull: ['$Resale_Rows', 0] }] }, parseInt(filters.rowRange.min)] });
+        }
+        if (filters.rowRange.max) {
+          exprConditions.push({ $lte: [{ $add: [{ $ifNull: ['$Standard_Rows', 0] }, { $ifNull: ['$Resale_Rows', 0] }] }, parseInt(filters.rowRange.max)] });
+        }
+        if (exprConditions.length === 1) {
+          filterConditions.push({ $expr: exprConditions[0] });
+        } else {
+          filterConditions.push({ $expr: { $and: exprConditions } });
+        }
+      }
     }
 
     // Combine all conditions

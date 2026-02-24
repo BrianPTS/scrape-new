@@ -28,6 +28,12 @@ interface EventsTableControlsProps {
     seatRange?: {
       min?: string;
       max?: string;
+      type?: string;
+    };
+    rowRange?: {
+      min?: string;
+      max?: string;
+      type?: string;
     };
   };
 }
@@ -118,16 +124,37 @@ export default function EventsTableControls({
   };
 
   // Handle seat range changes
-  const handleSeatRangeChange = (type: 'min' | 'max', value: string) => {
+  const handleSeatRangeChange = (field: 'min' | 'max' | 'type', value: string) => {
     const updatedFilters = {
       ...localFilters,
       seatRange: {
         ...localFilters.seatRange,
-        [type]: value
+        [field]: value
       }
     };
     setLocalFilters(updatedFilters);
-    applyFilters({ [`seat${type.charAt(0).toUpperCase() + type.slice(1)}`]: value });
+    if (field === 'type') {
+      applyFilters({ seatType: value });
+    } else {
+      applyFilters({ [`seat${field.charAt(0).toUpperCase() + field.slice(1)}`]: value });
+    }
+  };
+
+  // Handle row range changes
+  const handleRowRangeChange = (field: 'min' | 'max' | 'type', value: string) => {
+    const updatedFilters = {
+      ...localFilters,
+      rowRange: {
+        ...localFilters.rowRange,
+        [field]: value
+      }
+    };
+    setLocalFilters(updatedFilters);
+    if (field === 'type') {
+      applyFilters({ rowType: value });
+    } else {
+      applyFilters({ [`row${field.charAt(0).toUpperCase() + field.slice(1)}`]: value });
+    }
   };
 
   // Clear all filters
@@ -290,27 +317,69 @@ export default function EventsTableControls({
             </div>
           </div>
 
-          {/* Seat Range */}
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+          {/* Qty & Row Filters */}
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+            {/* Seat / Qty Range */}
             <div className="space-y-2">
               <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">
                 <Users className="inline h-3.5 w-3.5 mr-1" aria-hidden="true" />
-                Seat Range
+                Qty Range
               </label>
+              <select
+                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                value={localFilters.seatRange?.type || 'combined'}
+                onChange={(e) => handleSeatRangeChange('type', e.target.value)}
+              >
+                <option value="combined">Combined (S+R)</option>
+                <option value="standard">Standard Only</option>
+                <option value="resale">Resale Only</option>
+              </select>
               <div className="grid grid-cols-2 gap-2">
                 <input
                   type="number"
                   className="px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Min seats"
+                  placeholder="Min qty"
                   value={localFilters.seatRange?.min || ''}
                   onChange={(e) => handleSeatRangeChange('min', e.target.value)}
                 />
                 <input
                   type="number"
                   className="px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Max seats"
+                  placeholder="Max qty"
                   value={localFilters.seatRange?.max || ''}
                   onChange={(e) => handleSeatRangeChange('max', e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Row Range */}
+            <div className="space-y-2">
+              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                Row Range
+              </label>
+              <select
+                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                value={localFilters.rowRange?.type || 'combined'}
+                onChange={(e) => handleRowRangeChange('type', e.target.value)}
+              >
+                <option value="combined">Combined (S+R)</option>
+                <option value="standard">Standard Only</option>
+                <option value="resale">Resale Only</option>
+              </select>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="number"
+                  className="px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Min rows"
+                  value={localFilters.rowRange?.min || ''}
+                  onChange={(e) => handleRowRangeChange('min', e.target.value)}
+                />
+                <input
+                  type="number"
+                  className="px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Max rows"
+                  value={localFilters.rowRange?.max || ''}
+                  onChange={(e) => handleRowRangeChange('max', e.target.value)}
                 />
               </div>
             </div>
