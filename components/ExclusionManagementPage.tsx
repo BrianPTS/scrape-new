@@ -197,14 +197,22 @@ export default function ExclusionManagementPage({ eventId, eventName }: Exclusio
                         <label className="block text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">Section</label>
                         <select
                           value={exclusion.section}
-                          onChange={(e) => updateSectionExclusion(index, { 
+                          onChange={(e) => updateSectionExclusion(index, {
                             section: e.target.value,
                             excludedRows: [] // Reset rows when section changes
                           })}
                           className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white shadow-sm font-medium"
                         >
                           <option value="">Select Section</option>
-                          {sections.map(section => (
+                          {sections
+                            .filter(section => {
+                              // Hide sections already selected in other exclusion rules
+                              const alreadySelected = sectionRowExclusions.some(
+                                (other, otherIndex) => otherIndex !== index && other.section === section.section
+                              );
+                              return !alreadySelected;
+                            })
+                            .map(section => (
                             <option key={section.section} value={section.section}>
                               {section.section} ({section.totalListings} listings)
                             </option>
@@ -256,10 +264,15 @@ export default function ExclusionManagementPage({ eventId, eventName }: Exclusio
               
               <button
                 onClick={addSectionExclusion}
-                className="flex items-center justify-center space-x-3 w-full py-4 border-2 border-dashed border-slate-300 rounded-2xl text-slate-600 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 font-semibold"
+                disabled={sectionRowExclusions.length >= sections.length}
+                className={`flex items-center justify-center space-x-3 w-full py-4 border-2 border-dashed rounded-2xl transition-all duration-200 font-semibold ${
+                  sectionRowExclusions.length >= sections.length
+                    ? 'border-slate-200 text-slate-400 cursor-not-allowed bg-slate-50'
+                    : 'border-slate-300 text-slate-600 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50'
+                }`}
               >
                 <Plus size={24} />
-                <span>Add Section Exclusion</span>
+                <span>{sectionRowExclusions.length >= sections.length ? 'All Sections Added' : 'Add Section Exclusion'}</span>
               </button>
             </div>
           </div>
