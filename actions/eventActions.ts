@@ -117,6 +117,18 @@ export async function getPaginatedEventsAdvanced(page: number = 1, limit: number
       filterConditions.push({ Event_DateTime: dateFilter });
     }
 
+    // Date created filter (createdAt — Mongoose timestamps)
+    if (filters.createdFrom || filters.createdTo) {
+      const createdFilter: any = {};
+      if (filters.createdFrom) createdFilter.$gte = new Date(filters.createdFrom);
+      if (filters.createdTo) {
+        const end = new Date(filters.createdTo);
+        end.setHours(23, 59, 59, 999);
+        createdFilter.$lte = end;
+      }
+      filterConditions.push({ createdAt: createdFilter });
+    }
+
     // Venue filter (only when not already covered by search)
     if (filters.venue && !search.trim()) {
       filterConditions.push({ Venue: { $regex: filters.venue.trim(), $options: 'i' } });

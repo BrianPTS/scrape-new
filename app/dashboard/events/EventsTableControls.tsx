@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useTransition, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Search, Filter, Calendar, MapPin, Users, RefreshCw, ChevronDown } from 'lucide-react';
+import { Search, Filter, Calendar, CalendarPlus, MapPin, Users, RefreshCw, ChevronDown } from 'lucide-react';
 
 const AUTO_REFRESH_INTERVAL = 30; // seconds
 
@@ -22,6 +22,8 @@ interface EventsTableControlsProps {
   filters: {
     dateFrom?: string;
     dateTo?: string;
+    createdFrom?: string;
+    createdTo?: string;
     venue?: string;
     scrapingStatus?: string;
     sortBy?: string;
@@ -243,12 +245,12 @@ export default function EventsTableControls({
       {/* Advanced Filters */}
       {isAdvancedOpen && (
         <div className="border-t border-gray-200 pt-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-            {/* Date Range */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+            {/* Date Range (Event Date) */}
             <div className="space-y-2">
               <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">
                 <Calendar className="inline h-3.5 w-3.5 mr-1" aria-hidden="true" />
-                Date Range
+                Event Date
               </label>
               <div className="space-y-1.5">
                 <input
@@ -262,6 +264,28 @@ export default function EventsTableControls({
                   className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   value={localFilters.dateTo || ''}
                   onChange={(e) => handleFilterChange('dateTo', e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Date Created */}
+            <div className="space-y-2">
+              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                <CalendarPlus className="inline h-3.5 w-3.5 mr-1" aria-hidden="true" />
+                Date Created
+              </label>
+              <div className="space-y-1.5">
+                <input
+                  type="date"
+                  className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={localFilters.createdFrom || ''}
+                  onChange={(e) => handleFilterChange('createdFrom', e.target.value)}
+                />
+                <input
+                  type="date"
+                  className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={localFilters.createdTo || ''}
+                  onChange={(e) => handleFilterChange('createdTo', e.target.value)}
                 />
               </div>
             </div>

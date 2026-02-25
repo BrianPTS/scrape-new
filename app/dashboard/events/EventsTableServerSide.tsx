@@ -40,6 +40,8 @@ interface ResolvedSearchParams {
   scrapingStatus?: string;
   sortBy?: string;
   sortOrder?: string;
+  createdFrom?: string;
+  createdTo?: string;
   seatMin?: string;
   seatMax?: string;
   seatType?: string;
@@ -75,6 +77,8 @@ function SortableHeader({
   if (sp.dateTo) params.set('dateTo', sp.dateTo);
   if (sp.venue) params.set('venue', sp.venue);
   if (sp.scrapingStatus) params.set('scrapingStatus', sp.scrapingStatus);
+  if (sp.createdFrom) params.set('createdFrom', sp.createdFrom);
+  if (sp.createdTo) params.set('createdTo', sp.createdTo);
   if (sp.seatMin) params.set('seatMin', sp.seatMin);
   if (sp.seatMax) params.set('seatMax', sp.seatMax);
   if (sp.seatType) params.set('seatType', sp.seatType);
@@ -163,6 +167,8 @@ export default async function EventsTableServerSide({ searchParams }: PageProps)
   const filters = {
     dateFrom: sp.dateFrom,
     dateTo: sp.dateTo,
+    createdFrom: sp.createdFrom,
+    createdTo: sp.createdTo,
     venue: sp.venue,
     scrapingStatus: sp.scrapingStatus || 'active',
     sortBy,
