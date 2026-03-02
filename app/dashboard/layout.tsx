@@ -3,19 +3,20 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { 
-  LayoutDashboard, 
-  Calendar, 
-  Plus, 
-  Menu, 
-  Package, 
-  Download, 
+import {
+  LayoutDashboard,
+  Calendar,
+  Plus,
+  Menu,
+  Package,
+  Download,
   LogOut,
   ShoppingCart,
   X,
   SignalHigh,
-  Filter
-  
+  Filter,
+  Compass
+
 } from 'lucide-react';
 
 const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
@@ -56,6 +57,12 @@ const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
       path: '/dashboard/exclusions',
       label: 'Exclusion Rules',
       icon: <Filter className="w-5 h-5" />,
+      isActive: true,
+    },
+    {
+      path: '/dashboard/discover',
+      label: 'Discover',
+      icon: <Compass className="w-5 h-5" />,
       isActive: true,
     },
     {
