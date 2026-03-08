@@ -1,8 +1,9 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import StyledComponentsRegistry from './StyledComponentsRegistry';
 import { NotificationProvider } from '@/components/providers/NotificationProvider';
+import PWARegister from '@/components/PWARegister';
 
 
 const geistSans = Geist({
@@ -15,15 +16,31 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+export const viewport: Viewport = {
+  themeColor: '#4f46e5',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
+
 export const metadata: Metadata = {
-  title: "Scraper Portal",
+  title: "TMC Portal",
   description: "Event scraping and inventory management portal",
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'TMC Portal',
+  },
   icons: {
     icon: [
       { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icon-512.png', sizes: '512x512', type: 'image/png' },
     ],
     shortcut: '/icon.svg',
-    apple: '/icon.svg',
+    apple: '/icon-192.png',
   },
 };
 
@@ -32,8 +49,6 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Initialize startup service
-
   return (
     <html lang="en">
       <body
@@ -42,6 +57,7 @@ export default function RootLayout({
         <StyledComponentsRegistry>
           <NotificationProvider>
             {children}
+            <PWARegister />
           </NotificationProvider>
         </StyledComponentsRegistry>
       </body>

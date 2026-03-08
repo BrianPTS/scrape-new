@@ -318,3 +318,26 @@ textarea:focus-visible,
   background: rgba(148, 163, 184, 0.5);
 }
 
+/* PWA standalone mode adjustments */
+@media all and (display-mode: standalone) {
+  /* Account for iOS safe areas (notch, home indicator) */
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /* Disable text selection on nav elements for app-like feel */
+  nav a, nav button, aside button {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Prevent pull-to-refresh on iOS when at top */
+  html {
+    overscroll-behavior-y: contain;
+  }
+}
+
