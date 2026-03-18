@@ -381,8 +381,6 @@ export async function generateInventoryCsv(eventUpdateFilterMinutes: number = 0)
       'event_std_adj': 1,
       'event_resale_adj': 1,
       'event_default_pct': 1,
-      'event_first_row_boost': 1,
-      'event_no_upgrade_boost': 1,
     };
 
       // Enhanced cursor with better memory management and parallel processing
@@ -409,8 +407,6 @@ export async function generateInventoryCsv(eventUpdateFilterMinutes: number = 0)
             event_std_adj: { $ifNull: [{ $arrayElemAt: ['$eventDetails.standardMarkupAdjustment', 0] }, 0] },
             event_resale_adj: { $ifNull: [{ $arrayElemAt: ['$eventDetails.resaleMarkupAdjustment', 0] }, 0] },
             event_default_pct: { $ifNull: [{ $arrayElemAt: ['$eventDetails.priceIncreasePercentage', 0] }, 0] },
-            event_first_row_boost: { $ifNull: [{ $arrayElemAt: ['$eventDetails.firstRowMarkupBoost', 0] }, 10] },
-            event_no_upgrade_boost: { $ifNull: [{ $arrayElemAt: ['$eventDetails.noUpgradeMarkupBoost', 0] }, 10] },
           }
         },
         { $project: projection },
@@ -538,8 +534,6 @@ interface ConsecutiveGroupDocument {
   event_std_adj?: number;
   event_resale_adj?: number;
   event_default_pct?: number;
-  event_first_row_boost?: number;
-  event_no_upgrade_boost?: number;
   seats?: Array<{ number: string | number }>;
 }
 
@@ -623,6 +617,10 @@ function rowToRank(row: string): number {
   return 99999;
 }
 
+// Hardcoded risk markup percentages
+const FIRST_ROW_BOOST_PCT = 10;   // +10% for the lowest (front) row in each section
+const NO_UPGRADE_BOOST_PCT = 10;  // +10% when no upgrade listing with matching quantity exists
+
 // Helper function to process batches in parallel
 // Now section-aware: determines first-row boost and no-upgrade-path boost.
 async function processBatch(batch: ConsecutiveGroupDocument[]): Promise<CsvRow[]> {
@@ -633,18 +631,23 @@ async function processBatch(batch: ConsecutiveGroupDocument[]): Promise<CsvRow[]
     row: string;
     rank: number;
     listPrice: number; // raw list price for cost comparison
+    quantity: number;   // seat count for quantity-matched upgrade check
   }
   const sectionMap = new Map<string, SectionEntry[]>();
 
   for (const doc of batch) {
     const section = doc.inventory?.section || '';
     const row = doc.inventory?.row || '';
+    const rank = rowToRank(row);
+    // Skip GA/SRO rows — they are not real seated rows
+    if (rank === 99999) continue;
     const key = `${doc.mapping_id}::${section}`;
     if (!sectionMap.has(key)) sectionMap.set(key, []);
     sectionMap.get(key)!.push({
       row,
-      rank: rowToRank(row),
+      rank,
       listPrice: doc.inventory?.listPrice || 0,
+      quantity: doc.inventory?.quantity || 0,
     });
   }
 
@@ -673,25 +676,27 @@ async function processBatch(batch: ConsecutiveGroupDocument[]): Promise<CsvRow[]
     const row = inventory?.row || '';
     const sectionKey = `${doc.mapping_id}::${section}`;
     const currentRank = rowToRank(row);
-    const firstRowBoost = doc.event_first_row_boost ?? 10;
-    const noUpgradeBoost = doc.event_no_upgrade_boost ?? 10;
+    const currentQty = inventory?.quantity || 0;
 
-    const isFirstRow = currentRank !== 99999 && currentRank === (frontRowRank.get(sectionKey) ?? 99999);
-    if (isFirstRow && firstRowBoost > 0) {
-      adjustedListPrice = adjustedListPrice * (1 + firstRowBoost / 100);
-    }
+    // Only apply row-based boosts to real seated rows (skip GA/SRO)
+    if (currentRank !== 99999) {
+      const isFirstRow = currentRank === (frontRowRank.get(sectionKey) ?? 99999);
+      if (isFirstRow) {
+        adjustedListPrice = adjustedListPrice * (1 + FIRST_ROW_BOOST_PCT / 100);
+      }
 
-    // ── No-upgrade-path markup boost ────────────────────────────────
-    // Check if any rows closer to the stage (lower rank) exist in this section
-    // within 10% of the current listing's cost.  If none → apply boost.
-    if (!isFirstRow && currentRank !== 99999 && noUpgradeBoost > 0) {
-      const sectionEntries = sectionMap.get(sectionKey) || [];
-      const costThreshold = rawListPrice * 1.10; // within 10% cost increase
-      const hasUpgradePath = sectionEntries.some(
-        e => e.rank < currentRank && e.listPrice <= costThreshold
-      );
-      if (!hasUpgradePath) {
-        adjustedListPrice = adjustedListPrice * (1 + noUpgradeBoost / 100);
+      // ── No-upgrade-path markup boost ────────────────────────────────
+      // For non-front-row listings: check if a closer row has a listing with the
+      // same quantity within 10% of this listing's cost.  If not → boost.
+      if (!isFirstRow) {
+        const sectionEntries = sectionMap.get(sectionKey) || [];
+        const costThreshold = rawListPrice * 1.10; // within 10% cost increase
+        const hasUpgradePath = sectionEntries.some(
+          e => e.rank < currentRank && e.quantity === currentQty && e.listPrice <= costThreshold
+        );
+        if (!hasUpgradePath) {
+          adjustedListPrice = adjustedListPrice * (1 + NO_UPGRADE_BOOST_PCT / 100);
+        }
       }
     }
 

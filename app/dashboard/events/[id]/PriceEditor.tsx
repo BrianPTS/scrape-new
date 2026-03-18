@@ -10,8 +10,6 @@ interface Props {
   initialPct: number;
   initialStandardAdj?: number;
   initialResaleAdj?: number;
-  initialFirstRowBoost?: number;
-  initialNoUpgradeBoost?: number;
 }
 
 const PRESETS = [0, 5, 10, 15, 20, 25, 30, 40, 50];
@@ -63,19 +61,17 @@ function AdjRow({
   );
 }
 
-export default function PriceEditor({ eventId, initialPct, initialStandardAdj = 0, initialResaleAdj = 0, initialFirstRowBoost = 10, initialNoUpgradeBoost = 10 }: Props) {
+export default function PriceEditor({ eventId, initialPct, initialStandardAdj = 0, initialResaleAdj = 0 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [value, setValue] = useState(initialPct);
   const [inputVal, setInputVal] = useState(String(initialPct));
   const [stdAdj, setStdAdj] = useState(initialStandardAdj);
   const [resaleAdj, setResaleAdj] = useState(initialResaleAdj);
-  const [firstRowBoost, setFirstRowBoost] = useState(initialFirstRowBoost);
-  const [noUpgradeBoost, setNoUpgradeBoost] = useState(initialNoUpgradeBoost);
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const successTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const isDirty = value !== initialPct || stdAdj !== initialStandardAdj || resaleAdj !== initialResaleAdj || firstRowBoost !== initialFirstRowBoost || noUpgradeBoost !== initialNoUpgradeBoost;
+  const isDirty = value !== initialPct || stdAdj !== initialStandardAdj || resaleAdj !== initialResaleAdj;
 
   useEffect(() => { setInputVal(String(value)); }, [value]);
 
@@ -97,8 +93,6 @@ export default function PriceEditor({ eventId, initialPct, initialStandardAdj = 
           priceIncreasePercentage: value,
           standardMarkupAdjustment: stdAdj,
           resaleMarkupAdjustment: resaleAdj,
-          firstRowMarkupBoost: firstRowBoost,
-          noUpgradeMarkupBoost: noUpgradeBoost,
         } as Parameters<typeof updateEvent>[1], false);
         setSaveState('saved');
         router.refresh();
@@ -211,40 +205,6 @@ export default function PriceEditor({ eventId, initialPct, initialStandardAdj = 
             }}
             disabled={isPending}
           />
-        </div>
-
-        {/* --- Risk Adjustments --- */}
-        <div className="bg-amber-50 rounded-xl p-3.5 space-y-0.5">
-          <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mb-2">
-            Risk Adjustments
-          </p>
-          <AdjRow
-            label="Front Row Boost"
-            adj={firstRowBoost}
-            defaultPct={0}
-            onChange={(v) => {
-              setFirstRowBoost(v);
-              setSaveState("idle");
-            }}
-            disabled={isPending}
-          />
-          <p className="text-[10px] text-slate-400 pb-1">
-            Extra markup on the lowest row per section
-          </p>
-          <div className="h-px bg-amber-200 my-1" />
-          <AdjRow
-            label="No-Upgrade Boost"
-            adj={noUpgradeBoost}
-            defaultPct={0}
-            onChange={(v) => {
-              setNoUpgradeBoost(v);
-              setSaveState("idle");
-            }}
-            disabled={isPending}
-          />
-          <p className="text-[10px] text-slate-400">
-            Extra markup when no upgrade rows within 10% cost
-          </p>
         </div>
 
         {/* Save button */}

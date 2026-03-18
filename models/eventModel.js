@@ -69,14 +69,6 @@ const eventSchema = new mongoose.Schema(
       type: Number,
       default: 0, // +/- offset on top of scraper default for RESALE tickets
     },
-    firstRowMarkupBoost: {
-      type: Number,
-      default: 10, // Extra markup % added to the lowest (front) row in each section
-    },
-    noUpgradeMarkupBoost: {
-      type: Number,
-      default: 10, // Extra markup % when no upgrade rows exist within 10% cost
-    },
     Last_Updated: {
       type: Date,
       default: Date.now,
