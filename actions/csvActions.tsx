@@ -715,7 +715,7 @@ export async function uploadInventoryToStubHub(
       const batchResult = await stubhub.upsertListings(payloads);
 
       console.log('=== STUBHUB UPLOAD RESULT ===');
-      console.log(`Total: ${batchResult.total}, Created: ${batchResult.created}, Failed: ${batchResult.failed}`);
+      console.log(`Total: ${batchResult.total}, Created: ${batchResult.created}, Patched: ${batchResult.updated}, Failed: ${batchResult.failed}`);
       if (batchResult.errors.length > 0) {
         console.log(`Errors: ${JSON.stringify(batchResult.errors.slice(0, 5))}`);
       }
@@ -727,17 +727,18 @@ export async function uploadInventoryToStubHub(
         lastUploadStatus: batchResult.failed === 0 ? 'success' : 'failed',
       });
 
+      const succeeded = batchResult.created + batchResult.updated;
       if (batchResult.failed === 0) {
         return {
           success: true,
-          message: `Successfully uploaded ${batchResult.created} listings to StubHub`,
+          message: `Successfully synced ${succeeded} listings to StubHub (${batchResult.created} created, ${batchResult.updated} patched)`,
           result: batchResult,
         };
-      } else if (batchResult.created > 0) {
+      } else if (succeeded > 0) {
         // Partial success
         return {
           success: true,
-          message: `Uploaded ${batchResult.created}/${batchResult.total} listings to StubHub (${batchResult.failed} failed)`,
+          message: `Synced ${succeeded}/${batchResult.total} listings to StubHub (${batchResult.created} created, ${batchResult.updated} patched, ${batchResult.failed} failed)`,
           result: batchResult,
         };
       } else {

@@ -440,11 +440,45 @@ class StubHubService {
   // -----------------------------------------------------------------------
 
   /**
+   * Try to PATCH an existing listing by external_id. If the listing doesn't
+   * exist (404), fall back to POST to create it.
+   *
+   * This preserves the StubHub listing ID and any associated history when
+   * only the quantity/price/seats changed (common when TM seats get sold).
+   */
+  async patchOrCreateListing(
+    payload: StubHubListingPayload
+  ): Promise<{ response: StubHubListingResponse; action: 'patched' | 'created' }> {
+    // Build a PATCH-safe payload (no event info — you can't change the event)
+    const { event: _event, external_id: _eid, ...patchFields } = payload;
+
+    try {
+      const response = await this.request<StubHubListingResponse>(
+        'PATCH',
+        `/inventory/sellerlistings/external/${encodeURIComponent(payload.external_id)}`,
+        patchFields
+      );
+      return { response, action: 'patched' };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+
+      // 404 means the listing doesn't exist yet — create it
+      if (msg.includes('404')) {
+        const response = await this.createListing(payload);
+        return { response, action: 'created' };
+      }
+
+      // Any other error — re-throw
+      throw error;
+    }
+  }
+
+  /**
    * Upsert listings in batch.
    *
-   * Because StubHub's create endpoint replaces any listing with the same
-   * external_id, we simply POST every listing — this handles both creates
-   * and updates in one pass.
+   * For each listing, tries PATCH by external_id first (fast, preserves
+   * StubHub listing ID). If the listing doesn't exist yet (404), falls
+   * back to POST to create it.
    */
   async upsertListings(
     listings: StubHubListingPayload[]
@@ -465,7 +499,7 @@ class StubHubService {
     );
 
     const outcomes = await this.runWithConcurrency(listings, async (listing) => {
-      return this.createListing(listing);
+      return this.patchOrCreateListing(listing);
     });
 
     for (const outcome of outcomes) {
@@ -475,15 +509,15 @@ class StubHubService {
           externalId: outcome.item.external_id,
           error: outcome.error,
         });
+      } else if (outcome.result?.action === 'patched') {
+        result.updated++;
       } else {
-        // StubHub replaces on duplicate external_id, so we count all
-        // successes as created (the API handles the upsert internally).
         result.created++;
       }
     }
 
     console.log(
-      `StubHub upsert complete: ${result.created} succeeded, ${result.failed} failed`
+      `StubHub upsert complete: ${result.created} created, ${result.updated} patched, ${result.failed} failed`
     );
     return result;
   }
