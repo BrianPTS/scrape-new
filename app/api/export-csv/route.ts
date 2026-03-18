@@ -1,55 +1,55 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateInventoryCsv, uploadCsvToSyncService } from '../../../actions/csvActions';
+import { generateInventoryCsv, uploadInventoryToStubHub } from '../../../actions/csvActions';
 
-// Set maxDuration for this API route to handle large CSV operations
+// Set maxDuration for this API route to handle large inventory operations
 export const maxDuration = 300; // 5 minutes
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { eventUpdateFilterMinutes = 0 } = body;
-    
-    console.log('Starting manual CSV generation and upload...');
-    
-    // Generate CSV on server side
+
+    console.log('Starting manual inventory generation and StubHub upload...');
+
+    // Generate inventory data
     const generateResult = await generateInventoryCsv(eventUpdateFilterMinutes);
-    
-    if (!generateResult.success || !generateResult.csv) {
-      console.error('CSV generation failed:', generateResult.message);
-      return NextResponse.json({ 
-        success: false, 
-        message: generateResult.message || 'Failed to generate CSV'
+
+    if (!generateResult.success || !generateResult.records || generateResult.records.length === 0) {
+      console.error('Inventory generation failed:', generateResult.message);
+      return NextResponse.json({
+        success: false,
+        message: generateResult.message || 'Failed to generate inventory data'
       }, { status: 400 });
     }
 
-    console.log(`CSV generated successfully: ${generateResult.recordCount} records`);
-    
-    // Upload CSV directly to sync service (server-side)
-    const uploadResult = await uploadCsvToSyncService(generateResult.csv);
-    
+    console.log(`Inventory generated successfully: ${generateResult.recordCount} records`);
+
+    // Upload inventory directly to StubHub
+    const uploadResult = await uploadInventoryToStubHub(generateResult.records);
+
     if (uploadResult.success) {
-      console.log('CSV uploaded to sync service successfully');
+      console.log('Inventory uploaded to StubHub successfully');
       return NextResponse.json({
         success: true,
-        message: 'CSV generated and uploaded to sync service successfully',
+        message: 'Inventory generated and uploaded to StubHub successfully',
         recordCount: generateResult.recordCount,
         generationTime: generateResult.generationTime,
-        uploadId: uploadResult.uploadId
+        stubhubResult: uploadResult.result,
       });
     } else {
-      console.error('CSV upload failed:', uploadResult.message);
+      console.error('StubHub upload failed:', uploadResult.message);
       return NextResponse.json({
         success: false,
-        message: `CSV generation succeeded but upload failed: ${uploadResult.message}`,
+        message: `Inventory generation succeeded but StubHub upload failed: ${uploadResult.message}`,
         recordCount: generateResult.recordCount,
         generationTime: generateResult.generationTime
       }, { status: 500 });
     }
   } catch (error) {
-    console.error('Error in export CSV API:', error);
-    return NextResponse.json({ 
-      success: false, 
-      message: 'Internal server error during CSV export' 
+    console.error('Error in export inventory API:', error);
+    return NextResponse.json({
+      success: false,
+      message: 'Internal server error during inventory export'
     }, { status: 500 });
   }
 }

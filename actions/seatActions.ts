@@ -4,7 +4,7 @@ import dbConnect from '@/lib/dbConnect';
 import { ConsecutiveGroup } from '@/models/seatModel'; // Assuming models are aliased to @/models
 import { Event } from '@/models/eventModel'; // Assuming models are aliased to @/models
 import { UpdateQuery } from 'mongoose';
-import { clearInventoryFromSync, deleteInventoryBatchFromSync } from './csvActions';
+import { clearInventoryFromStubHub, deleteInventoryBatchFromStubHub } from './csvActions';
 
 /**
  * Creates a new consecutive seat group.
@@ -273,7 +273,7 @@ export async function deleteConsecutiveGroupsByEventId(eventId: string) {
     if (deleteResult.deletedCount > 0 && inventoryIdsToDelete.length > 0) {
       console.log('Deleting specific inventory from sync service...');
       try {
-        const syncResult = await deleteInventoryBatchFromSync(inventoryIdsToDelete);
+        const syncResult = await deleteInventoryBatchFromStubHub(inventoryIdsToDelete);
         console.log('Sync deletion result:', syncResult);
         if (!syncResult.success) {
           console.warn('Failed to delete inventory from sync:', syncResult.message);
@@ -323,7 +323,7 @@ export async function deleteConsecutiveGroupsByEventIds(eventIds: string[]) {
     if (deleteResult.deletedCount > 0 && inventoryIdsToDelete.length > 0) {
       console.log('Deleting specific inventory from sync service after bulk deletion...');
       try {
-        const syncResult = await deleteInventoryBatchFromSync(inventoryIdsToDelete);
+        const syncResult = await deleteInventoryBatchFromStubHub(inventoryIdsToDelete);
         console.log('Sync deletion result:', syncResult);
         if (!syncResult.success) {
           console.warn('Failed to delete inventory from sync:', syncResult.message);

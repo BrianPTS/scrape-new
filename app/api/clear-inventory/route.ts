@@ -1,18 +1,18 @@
 import { NextResponse } from 'next/server';
-import { clearInventoryFromSync } from '../../../actions/csvActions';
+import { clearInventoryFromStubHub } from '../../../actions/csvActions';
 
 export async function POST() {
   try {
-    console.log('Starting inventory clear process...');
-    
-    const result = await clearInventoryFromSync();
-    
+    console.log('Starting inventory clear process on StubHub...');
+
+    const result = await clearInventoryFromStubHub();
+
     if (result.success) {
       console.log('Inventory cleared successfully');
       return NextResponse.json({
         success: true,
         message: result.message,
-        uploadId: result.uploadId
+        result: result.result,
       });
     } else {
       console.error('Failed to clear inventory:', result.message);

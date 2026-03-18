@@ -6,7 +6,8 @@ import { Event } from '../models/eventModel';
 import { SchedulerSettings } from '../models/schedulerModel';
 import { AutoDeleteSettings } from '../models/autoDeleteModel';
 import { ExclusionRules } from '../models/exclusionRulesModel';
-import SyncService from '../lib/syncService';
+import StubHubService, { mapTicketType, mapSplitType } from '../lib/stubhubService';
+import type { StubHubListingPayload, StubHubBatchResult } from '../lib/stubhubService';
 import { createErrorLog } from './errorLogActions';
 import { deleteExpiredEvents, getExpiredEventsStats } from './autoDeleteActions';
 import { PipelineStage } from 'mongoose';
@@ -193,6 +194,77 @@ function applyPriceAdjustment(originalPrice: number): number {
   }
   // Positive percentage = increase, Negative percentage = decrease
   return originalPrice * (1 + adjustmentPercentage / 100);
+}
+
+// Create a StubHub service instance from environment variables
+function createStubHubService(): StubHubService {
+  const accessToken = process.env.STUBHUB_ACCESS_TOKEN;
+  const refreshToken = process.env.STUBHUB_REFRESH_TOKEN;
+  const clientId = process.env.STUBHUB_CLIENT_ID;
+  const clientSecret = process.env.STUBHUB_CLIENT_SECRET;
+
+  if (!accessToken) {
+    throw new Error(
+      'StubHub credentials not configured. Please set STUBHUB_ACCESS_TOKEN environment variable.'
+    );
+  }
+
+  return new StubHubService({
+    accessToken,
+    refreshToken,
+    clientId,
+    clientSecret,
+    concurrency: Number(process.env.STUBHUB_CONCURRENCY) || 5,
+  });
+}
+
+// Convert a CsvRow into a StubHub listing payload
+function csvRowToStubHubPayload(record: CsvRow): StubHubListingPayload {
+  // Parse seat range from comma-separated seats string
+  const seatNumbers = record.seats ? record.seats.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const seatFrom = seatNumbers.length > 0 ? seatNumbers[0] : undefined;
+  const seatTo = seatNumbers.length > 1 ? seatNumbers[seatNumbers.length - 1] : seatFrom;
+
+  const payload: StubHubListingPayload = {
+    external_id: String(record.inventory_id),
+    number_of_tickets: record.quantity,
+    seating: {
+      section: record.section,
+      row: record.row,
+      seat_from: seatFrom,
+      seat_to: seatTo,
+      hide_seat_details: record.hide_seats === 'Y',
+    },
+    ticket_price: {
+      amount: record.list_price,
+      currency_code: 'USD',
+    },
+    face_value: {
+      amount: record.face_price,
+      currency_code: 'USD',
+    },
+    ticket_type: mapTicketType(record.stock_type),
+    split_type: mapSplitType(record.split_type),
+    notes: record.public_notes || undefined,
+    instant_delivery: record.instant_transfer === 'Y',
+    event: {
+      name: record.event_name,
+      start_date: record.event_date,
+      venue: {
+        name: record.venue_name,
+      },
+    },
+  };
+
+  if (record.shown_quantity) {
+    payload.display_number_of_tickets = record.shown_quantity;
+  }
+
+  if (record.in_hand_date) {
+    payload.in_hand_at = new Date(record.in_hand_date).toISOString();
+  }
+
+  return payload;
 }
 
 // Generic retry wrapper
@@ -400,9 +472,10 @@ export async function generateInventoryCsv(eventUpdateFilterMinutes: number = 0)
       
       console.log(`CSV generation completed in ${duration}ms for ${filteredRecords.length} records (Peak memory: ${memoryUsage}MB)`);
 
-      return { 
-        success: true, 
+      return {
+        success: true,
         csv: csvString,
+        records: filteredRecords,
         recordCount: filteredRecords.length,
         excludedCount: records.length - filteredRecords.length,
         generationTime: duration,
@@ -622,213 +695,162 @@ async function generateCsvString(records: CsvRow[]): Promise<string> {
   return chunks.join('\n');
 }
 
-export async function uploadCsvToSyncService(csvContent: string): Promise<{ success: boolean; message: string; uploadId?: string }> {
+export async function uploadInventoryToStubHub(
+  inventoryRecords: CsvRow[]
+): Promise<{ success: boolean; message: string; result?: StubHubBatchResult }> {
   return withRetry(async () => {
     try {
-      // Get sync service credentials from environment variables
-      const companyId = process.env.SYNC_COMPANY_ID;
-      const apiToken = process.env.SYNC_API_TOKEN;
-      
-      if (!companyId || !apiToken) {
-        throw new Error('Sync service credentials not configured. Please set SYNC_COMPANY_ID and SYNC_API_TOKEN environment variables.');
+      if (!inventoryRecords || inventoryRecords.length === 0) {
+        throw new Error('No inventory records to upload');
       }
-      
-      // Validate CSV content
-      if (!csvContent || csvContent.trim().length === 0) {
-        throw new Error('CSV content is empty or invalid');
+
+      const stubhub = createStubHubService();
+
+      // Convert all CsvRow records to StubHub listing payloads
+      const payloads = inventoryRecords.map(csvRowToStubHubPayload);
+
+      console.log(`Uploading ${payloads.length} listings to StubHub...`);
+
+      // Upsert all listings (StubHub replaces on duplicate external_id)
+      const batchResult = await stubhub.upsertListings(payloads);
+
+      console.log('=== STUBHUB UPLOAD RESULT ===');
+      console.log(`Total: ${batchResult.total}, Created: ${batchResult.created}, Failed: ${batchResult.failed}`);
+      if (batchResult.errors.length > 0) {
+        console.log(`Errors: ${JSON.stringify(batchResult.errors.slice(0, 5))}`);
       }
-      
-      // Initialize sync service
-      const syncService = new SyncService(companyId, apiToken);
-      
-      // Upload CSV content to sync service with timeout
-      const uploadPromise = syncService.uploadCsvContentToSync(csvContent);
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Upload timeout after 180 seconds')), 180000);
+      console.log('=============================');
+
+      // Update database with upload status
+      await updateSchedulerSettings({
+        lastUploadAt: new Date(),
+        lastUploadStatus: batchResult.failed === 0 ? 'success' : 'failed',
       });
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      const result = await Promise.race([uploadPromise, timeoutPromise]) as any;
-      
-      // Log detailed server response for debugging
-      console.log('=== SERVER UPLOAD RESPONSE ===');
-      console.log('Full server response:', JSON.stringify(result, null, 2));
-      console.log('Response type:', typeof result);
-      console.log('Response keys:', Object.keys(result || {}));
-      console.log('==============================');
-      
-      if ('success' in result && result.success) {
-        // Update database with upload status
-        await updateSchedulerSettings({
-          lastUploadAt: new Date(),
-          lastUploadStatus: 'success',
-          lastUploadId: (result as { uploadId?: string })?.uploadId
-        });
-        
-        console.log('✅ CSV content uploaded to sync service successfully');
-        console.log('Upload ID:', (result as { uploadId?: string })?.uploadId);
-        
+
+      if (batchResult.failed === 0) {
         return {
           success: true,
-          message: 'CSV uploaded to sync service successfully',
-          uploadId: (result as { uploadId?: string }).uploadId
+          message: `Successfully uploaded ${batchResult.created} listings to StubHub`,
+          result: batchResult,
+        };
+      } else if (batchResult.created > 0) {
+        // Partial success
+        return {
+          success: true,
+          message: `Uploaded ${batchResult.created}/${batchResult.total} listings to StubHub (${batchResult.failed} failed)`,
+          result: batchResult,
         };
       } else {
-        console.log('❌ Upload failed - Server response indicates failure');
-        console.log('Error message from server:', (result as { message?: string })?.message);
-        throw new Error((result as { message?: string }).message || 'Upload failed');
+        throw new Error(
+          `All ${batchResult.total} listings failed to upload. First error: ${batchResult.errors[0]?.error}`
+        );
       }
     } catch (error) {
-      console.error('Error uploading to sync service:', error);
-      
-      // Update database with error status
+      console.error('Error uploading to StubHub:', error);
+
       try {
         await updateSchedulerSettings({
           lastUploadAt: new Date(),
           lastUploadStatus: 'failed',
-          lastUploadError: error instanceof Error ? error.message : 'Unknown error occurred'
+          lastUploadError: error instanceof Error ? error.message : 'Unknown error occurred',
         });
       } catch (dbError) {
         console.error('Error updating database with upload status:', dbError);
       }
-      
-      throw error; // Re-throw for retry mechanism
+
+      throw error;
     }
-  }, 'CSV Upload', {
-    maxRetries: 5, // More retries for upload
-    baseDelay: 2000, // Longer delay for network operations
-    maxDelay: 30000
-  }).catch(error => {
+  }, 'StubHub Upload', {
+    maxRetries: 3,
+    baseDelay: 2000,
+    maxDelay: 30000,
+  }).catch((error) => {
     return {
       success: false,
-      message: `Failed to upload CSV to sync service after retries: ${error instanceof Error ? error.message : 'Unknown error'}`
+      message: `Failed to upload inventory to StubHub after retries: ${error instanceof Error ? error.message : 'Unknown error'}`,
     };
   });
 }
 
-export async function clearInventoryFromSync(): Promise<{ success: boolean; message: string; uploadId?: string }> {
+export async function clearInventoryFromStubHub(): Promise<{ success: boolean; message: string; result?: StubHubBatchResult }> {
   try {
-    // Get sync service credentials from environment variables
-    const companyId = process.env.SYNC_COMPANY_ID;
-    const apiToken = process.env.SYNC_API_TOKEN;
-    
-    if (!companyId || !apiToken) {
-      throw new Error('Sync service credentials not configured. Please set SYNC_COMPANY_ID and SYNC_API_TOKEN environment variables.');
-    }
-    
-    // Initialize sync service
-    const syncService = new SyncService(companyId, apiToken);
-    
-    // Clear all inventory
-    const result = await syncService.clearAllInventory();
-    
-    if ('success' in result && result.success) {
-      // Update database with clear inventory status
-      await updateSchedulerSettings({
-        lastUploadAt: new Date(),
-        lastUploadStatus: 'cleared',
-        lastUploadId: (result as { uploadId?: string })?.uploadId,
-        lastClearAt: new Date()
-      });
-      
-      console.log('Inventory cleared from sync service successfully');
-      
-      return {
-        success: true,
-        message: 'Inventory cleared from sync service successfully',
-        uploadId: (result as { uploadId?: string })?.uploadId
-      };
-    } else {
-      throw new Error((result as { message?: string })?.message || 'Clear inventory failed');
-    }
+    const stubhub = createStubHubService();
+
+    const result = await stubhub.clearAllListings();
+
+    // Update database with clear inventory status
+    await updateSchedulerSettings({
+      lastUploadAt: new Date(),
+      lastUploadStatus: 'cleared',
+      lastClearAt: new Date(),
+    });
+
+    console.log(`Inventory cleared from StubHub: ${result.deleted} listings deleted`);
+
+    return {
+      success: true,
+      message: `Inventory cleared from StubHub successfully (${result.deleted} listings deleted)`,
+      result,
+    };
   } catch (error) {
-    console.error('Error clearing inventory from sync service:', error);
-    
-    // Update database with error status
+    console.error('Error clearing inventory from StubHub:', error);
+
     try {
       await updateSchedulerSettings({
         lastUploadAt: new Date(),
         lastUploadStatus: 'clear_failed',
-        lastUploadError: error instanceof Error ? error.message : 'Unknown error occurred'
+        lastUploadError: error instanceof Error ? error.message : 'Unknown error occurred',
       });
     } catch (dbError) {
       console.error('Error updating database with clear inventory status:', dbError);
     }
-    
+
     return {
       success: false,
-      message: `Failed to clear inventory from sync service: ${error instanceof Error ? error.message : 'Unknown error'}`
+      message: `Failed to clear inventory from StubHub: ${error instanceof Error ? error.message : 'Unknown error'}`,
     };
   }
 }
 
-export async function deleteInventoryBatchFromSync(inventoryIds: string[]): Promise<{ success: boolean; message: string; successful: string[]; failed: string[] }> {
+export async function deleteInventoryBatchFromStubHub(
+  inventoryIds: string[]
+): Promise<{ success: boolean; message: string; successful: string[]; failed: string[] }> {
   try {
-    // Get sync service credentials from environment variables
-    const companyId = process.env.SYNC_COMPANY_ID;
-    const apiToken = process.env.SYNC_API_TOKEN;
-    
-    if (!companyId || !apiToken) {
-      throw new Error('Sync service credentials not configured. Please set SYNC_COMPANY_ID and SYNC_API_TOKEN environment variables.');
-    }
-    
     if (!inventoryIds || inventoryIds.length === 0) {
       return {
         success: true,
         message: 'No inventory IDs provided for deletion',
         successful: [],
-        failed: []
+        failed: [],
       };
     }
-    
-    // Initialize sync service
-    const syncService = new SyncService(companyId, apiToken);
-    
-    // Delete specific inventory items
-    const result = await syncService.deleteInventoryBatch(inventoryIds);
-    
-    console.log('Raw sync service response:', JSON.stringify(result, null, 2));
-    
-    // Check the actual deletion count from the response
-    const deletedCount = (result as { deleted?: number })?.deleted ?? 0;
-    const totalRequested = inventoryIds.length;
-    
-    console.log(`Sync service deletion summary: ${deletedCount}/${totalRequested} items deleted`);
-    
-    if (deletedCount === 0) {
-      console.warn('⚠️  No items were deleted from sync service. This could mean:');
-      console.warn('   - Inventory IDs do not exist in sync service');
-      console.warn('   - Items were already deleted');
-      console.warn('   - API endpoint format issue');
-    }
-    
-    // If we get here without an error, sync service reported success
-    // Check common success indicators or assume success if no error was thrown
-    const isSuccess = ('success' in result && result.success) || 
-                      ('status' in result && result.status === 'success') ||
-                      ('error' in result && !result.error) ||
-                      !('error' in result); // If no explicit error field, assume success
-    
-    if (isSuccess) {
-      const actuallyDeleted = (result as { deleted?: number })?.deleted ?? 0;
-      console.log(`Successfully processed deletion request: ${actuallyDeleted}/${inventoryIds.length} inventory items deleted from sync service`);
-      
-      return {
-        success: true,
-        message: `Successfully processed deletion request: ${actuallyDeleted}/${inventoryIds.length} inventory items deleted from sync service`,
-        successful: actuallyDeleted > 0 ? inventoryIds.slice(0, actuallyDeleted) : [],
-        failed: actuallyDeleted < inventoryIds.length ? inventoryIds.slice(actuallyDeleted) : []
-      };
-    } else {
-      throw new Error((result as { message?: string })?.message || 'Batch inventory deletion failed');
-    }
+
+    const stubhub = createStubHubService();
+
+    // Delete by external_id (which maps to our inventory_id)
+    const result = await stubhub.deleteListingsByExternalIds(inventoryIds);
+
+    console.log(`StubHub deletion summary: ${result.deleted}/${inventoryIds.length} items deleted`);
+
+    const successfulIds = inventoryIds.filter(
+      (id) => !result.errors.some((e) => e.externalId === id)
+    );
+    const failedIds = result.errors.map((e) => e.externalId);
+
+    return {
+      success: result.failed === 0,
+      message: `Deleted ${result.deleted}/${inventoryIds.length} inventory items from StubHub`,
+      successful: successfulIds,
+      failed: failedIds,
+    };
   } catch (error) {
-    console.error('Error deleting inventory batch from sync service:', error);
-    
+    console.error('Error deleting inventory batch from StubHub:', error);
+
     return {
       success: false,
-      message: `Failed to delete inventory batch from sync service: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      message: `Failed to delete inventory batch from StubHub: ${error instanceof Error ? error.message : 'Unknown error'}`,
       successful: [],
-      failed: inventoryIds
+      failed: inventoryIds,
     };
   }
 }

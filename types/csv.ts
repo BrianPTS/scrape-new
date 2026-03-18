@@ -73,14 +73,13 @@ export interface RetryOptions {
   operation: string;
 }
 
-export interface SyncServiceCredentials {
-  uploadUrl: string;
-  fields: Record<string, string>;
-}
-
-export interface SyncServiceConfig {
-  apiUrl: string;
-  apiKey: string;
-  requestTimeout: number;
-  maxRetries: number;
+export interface StubHubServiceConfig {
+  accessToken: string;
+  refreshToken?: string;
+  clientId?: string;
+  clientSecret?: string;
+  baseUrl?: string;
+  requestTimeout?: number;
+  maxRetries?: number;
+  concurrency?: number;
 }

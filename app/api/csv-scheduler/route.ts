@@ -5,7 +5,7 @@
 // Adjust the path based on your project structure
 // Or, if your tsconfig.json has a "paths" alias for "@", ensure it points to the correct directory.
 import { getSchedulerSettings, updateSchedulerSettings } from '@/actions/csvActions';
-import { generateInventoryCsv, uploadCsvToSyncService } from '@/actions/csvActions';
+import { generateInventoryCsv, uploadInventoryToStubHub } from '@/actions/csvActions';
 import { createErrorLog } from '@/actions/errorLogActions';
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -119,31 +119,30 @@ async function startScheduler(intervalMinutes: number, uploadToSync: boolean, ev
       const result = await generateInventoryCsv(currentSettings.eventUpdateFilterMinutes || 0);
       generationTime = Date.now() - generationStart;
       
-      if (result.success && result.csv) {
-        // Skip file saving to prevent storage issues - CSV is uploaded to sync service directly
-        console.log(`[${timestamp}] ✅ CSV generated in memory (${result.recordCount} records, generated in ${generationTime}ms)`);
-        
-        // Upload to sync service if enabled
+      if (result.success && result.records && result.records.length > 0) {
+        console.log(`[${timestamp}] ✅ Inventory generated (${result.recordCount} records, generated in ${generationTime}ms)`);
+
+        // Upload to StubHub if enabled
         if (currentSettings.uploadToSync) {
           const uploadStart = Date.now();
-          const uploadResult = await uploadCsvToSyncService(result.csv);
+          const uploadResult = await uploadInventoryToStubHub(result.records);
           uploadTime = Date.now() - uploadStart;
-          
+
           if (uploadResult.success) {
-            console.log(`[${timestamp}] ☁️ CSV uploaded to sync service successfully (${uploadTime}ms)`);
+            console.log(`[${timestamp}] ☁️ Inventory uploaded to StubHub successfully (${uploadTime}ms)`);
             schedulerMetrics.successfulRuns++;
           } else {
-            console.error(`[${timestamp}] ❌ Failed to upload CSV:`, uploadResult.message);
+            console.error(`[${timestamp}] ❌ Failed to upload to StubHub:`, uploadResult.message);
             schedulerMetrics.failedRuns++;
             schedulerMetrics.lastError = uploadResult.message;
-            
+
             // Log error to database
             await createErrorLog({
               eventUrl: 'CSV_SCHEDULER_UPLOAD',
               errorType: 'DATABASE_ERROR',
               message: uploadResult.message || 'Unknown upload error',
               metadata: {
-                operation: 'scheduled_csv_upload',
+                operation: 'scheduled_stubhub_upload',
                 timestamp: new Date()
               }
             });
