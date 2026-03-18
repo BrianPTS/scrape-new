@@ -30,6 +30,8 @@ interface EventType {
   priceIncreasePercentage?: number;
   standardMarkupAdjustment?: number;
   resaleMarkupAdjustment?: number;
+  firstRowMarkupBoost?: number;
+  noUpgradeMarkupBoost?: number;
   Last_Updated?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -70,6 +72,8 @@ export default async function EventDetailsPage({ params }: EventDetailsProps) {
 
   const stdAdj = event.standardMarkupAdjustment ?? 0;
   const resAdj = event.resaleMarkupAdjustment ?? 0;
+  const firstRowBoost = event.firstRowMarkupBoost ?? 10;
+  const noUpgradeBoost = event.noUpgradeMarkupBoost ?? 10;
 
   // Fetch standard/resale inventory counts
   const inventoryCounts = event.mapping_id
@@ -277,6 +281,8 @@ export default async function EventDetailsPage({ params }: EventDetailsProps) {
             initialPct={pct}
             initialStandardAdj={stdAdj}
             initialResaleAdj={resAdj}
+            initialFirstRowBoost={firstRowBoost}
+            initialNoUpgradeBoost={noUpgradeBoost}
           />
         </div>
       </div>

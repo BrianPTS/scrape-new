@@ -381,6 +381,8 @@ export async function generateInventoryCsv(eventUpdateFilterMinutes: number = 0)
       'event_std_adj': 1,
       'event_resale_adj': 1,
       'event_default_pct': 1,
+      'event_first_row_boost': 1,
+      'event_no_upgrade_boost': 1,
     };
 
       // Enhanced cursor with better memory management and parallel processing
@@ -407,6 +409,8 @@ export async function generateInventoryCsv(eventUpdateFilterMinutes: number = 0)
             event_std_adj: { $ifNull: [{ $arrayElemAt: ['$eventDetails.standardMarkupAdjustment', 0] }, 0] },
             event_resale_adj: { $ifNull: [{ $arrayElemAt: ['$eventDetails.resaleMarkupAdjustment', 0] }, 0] },
             event_default_pct: { $ifNull: [{ $arrayElemAt: ['$eventDetails.priceIncreasePercentage', 0] }, 0] },
+            event_first_row_boost: { $ifNull: [{ $arrayElemAt: ['$eventDetails.firstRowMarkupBoost', 0] }, 10] },
+            event_no_upgrade_boost: { $ifNull: [{ $arrayElemAt: ['$eventDetails.noUpgradeMarkupBoost', 0] }, 10] },
           }
         },
         { $project: projection },
@@ -534,6 +538,8 @@ interface ConsecutiveGroupDocument {
   event_std_adj?: number;
   event_resale_adj?: number;
   event_default_pct?: number;
+  event_first_row_boost?: number;
+  event_no_upgrade_boost?: number;
   seats?: Array<{ number: string | number }>;
 }
 
@@ -587,8 +593,68 @@ function calculateSplitConfiguration(quantity: number, splitType?: string): {
   }
 }
 
+// ── Row ordering utility ──────────────────────────────────────────────
+// Converts a row label (numeric "1", alpha "A", "AA", "GA", "SRO", etc.)
+// into a sortable numeric rank.  Lower rank = closer to the stage.
+//   Numeric rows: rank = number  (1 → 1, 2 → 2, …)
+//   Single-letter rows: rank = 1001..1026  (A=1001, B=1002, …, Z=1026)
+//   Double-letter rows: rank = 2001+  (AA=2001, BB=2002, …)
+//   GA / SRO / unparseable: rank = 99999  (treated as "far from stage")
+function rowToRank(row: string): number {
+  if (!row) return 99999;
+  const upper = row.trim().toUpperCase();
+  if (upper === 'GA' || upper === 'SRO') return 99999;
+
+  // Pure numeric rows
+  const num = parseInt(upper, 10);
+  if (!isNaN(num) && String(num) === upper) return num;
+
+  // Pure alpha rows (A-Z, AA-ZZ)
+  if (/^[A-Z]+$/.test(upper)) {
+    if (upper.length === 1) return 1001 + (upper.charCodeAt(0) - 65); // A=1001
+    // Double-letter: AA=2001, AB=2002, …
+    let rank = 2000;
+    for (let i = 0; i < upper.length; i++) {
+      rank += (upper.charCodeAt(i) - 65 + 1) * Math.pow(26, upper.length - 1 - i);
+    }
+    return rank;
+  }
+
+  return 99999;
+}
+
 // Helper function to process batches in parallel
+// Now section-aware: determines first-row boost and no-upgrade-path boost.
 async function processBatch(batch: ConsecutiveGroupDocument[]): Promise<CsvRow[]> {
+  // ── Build section-level context for first-row & no-upgrade checks ──
+  // Group docs by (mapping_id + section) so we can find the lowest row per section
+  // and check for upgrade paths.
+  interface SectionEntry {
+    row: string;
+    rank: number;
+    listPrice: number; // raw list price for cost comparison
+  }
+  const sectionMap = new Map<string, SectionEntry[]>();
+
+  for (const doc of batch) {
+    const section = doc.inventory?.section || '';
+    const row = doc.inventory?.row || '';
+    const key = `${doc.mapping_id}::${section}`;
+    if (!sectionMap.has(key)) sectionMap.set(key, []);
+    sectionMap.get(key)!.push({
+      row,
+      rank: rowToRank(row),
+      listPrice: doc.inventory?.listPrice || 0,
+    });
+  }
+
+  // For each section, determine the lowest row rank (front row)
+  const frontRowRank = new Map<string, number>();
+  for (const [key, entries] of sectionMap) {
+    const minRank = Math.min(...entries.map(e => e.rank));
+    frontRowRank.set(key, minRank);
+  }
+
   return batch.map(doc => {
     const inventory = doc.inventory;
     const isResale = inventory?.splitType !== 'NEVERLEAVEONE';
@@ -598,32 +664,58 @@ async function processBatch(batch: ConsecutiveGroupDocument[]): Promise<CsvRow[]
     const rawListPrice = inventory?.listPrice || 0;
     const defaultPct = doc.event_default_pct ?? 0;
     const adj = isResale ? (doc.event_resale_adj ?? 0) : (doc.event_std_adj ?? 0);
-    const adjustedListPrice = defaultPct !== 0 || adj !== 0
+    let adjustedListPrice = defaultPct !== 0 || adj !== 0
       ? rawListPrice * (1 + (defaultPct + adj) / 100) / (1 + defaultPct / 100)
       : rawListPrice;
-    
+
+    // ── First-row markup boost ──────────────────────────────────────
+    const section = inventory?.section || '';
+    const row = inventory?.row || '';
+    const sectionKey = `${doc.mapping_id}::${section}`;
+    const currentRank = rowToRank(row);
+    const firstRowBoost = doc.event_first_row_boost ?? 10;
+    const noUpgradeBoost = doc.event_no_upgrade_boost ?? 10;
+
+    const isFirstRow = currentRank !== 99999 && currentRank === (frontRowRank.get(sectionKey) ?? 99999);
+    if (isFirstRow && firstRowBoost > 0) {
+      adjustedListPrice = adjustedListPrice * (1 + firstRowBoost / 100);
+    }
+
+    // ── No-upgrade-path markup boost ────────────────────────────────
+    // Check if any rows closer to the stage (lower rank) exist in this section
+    // within 10% of the current listing's cost.  If none → apply boost.
+    if (!isFirstRow && currentRank !== 99999 && noUpgradeBoost > 0) {
+      const sectionEntries = sectionMap.get(sectionKey) || [];
+      const costThreshold = rawListPrice * 1.10; // within 10% cost increase
+      const hasUpgradePath = sectionEntries.some(
+        e => e.rank < currentRank && e.listPrice <= costThreshold
+      );
+      if (!hasUpgradePath) {
+        adjustedListPrice = adjustedListPrice * (1 + noUpgradeBoost / 100);
+      }
+    }
+
     // Pre-compute expensive operations with null safety
     const seatsString = doc.seats && doc.seats.length > 0 ?
       doc.seats.map((seat: { number: string | number }) => String(seat.number)).join(',') : '';
-    const eventDateString = doc.event_date ? 
+    const eventDateString = doc.event_date ?
       new Date(doc.event_date).toISOString() : '';
-    const inHandDateString = inventory?.inHandDate ? 
+    const inHandDateString = inventory?.inHandDate ?
       new Date(inventory.inHandDate).toISOString().slice(0, 10) : '';
 
     // Calculate split configuration based on quantity and split type
     const { finalSplitType, customSplit } = calculateSplitConfiguration(
-      inventory?.quantity || 0, 
+      inventory?.quantity || 0,
       inventory?.splitType
     );
 
     // Check if row is SRO and handle public notes accordingly
-    const row = inventory?.row || '';
     const isSRO = row.toUpperCase() === 'SRO';
     const existingPublicNotes = inventory?.publicNotes || '';
-    const publicNotes = isSRO 
+    const publicNotes = isSRO
       ? (existingPublicNotes ? `${existingPublicNotes} - STANDING ROOM ONLY` : 'STANDING ROOM ONLY')
       : existingPublicNotes;
-    
+
     return {
       inventory_id: inventory?.inventoryId || 0,
       event_name: doc.event_name || "",
