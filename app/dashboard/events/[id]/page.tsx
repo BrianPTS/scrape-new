@@ -36,8 +36,17 @@ interface EventType {
   error?: string;
 }
 
+const GAME_DAY_MARKUP_PCT = 10;
+
 function fmt(date: string, opts: Intl.DateTimeFormatOptions) {
   return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', ...opts }).format(new Date(date));
+}
+
+/** Check if an event date falls on today in US Eastern time */
+function isGameDay(eventDateTime: string | undefined): boolean {
+  if (!eventDateTime) return false;
+  const f = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' });
+  return f.format(new Date()) === f.format(new Date(eventDateTime));
 }
 
 function InfoRow({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
@@ -67,6 +76,8 @@ export default async function EventDetailsPage({ params }: EventDetailsProps) {
     : true;
 
   const pct = event.priceIncreasePercentage ?? 25;
+  const gameDay = isGameDay(event.Event_DateTime);
+  const effectivePct = gameDay ? pct + GAME_DAY_MARKUP_PCT : pct;
 
   const stdAdj = event.standardMarkupAdjustment ?? 0;
   const resAdj = event.resaleMarkupAdjustment ?? 0;
@@ -117,6 +128,11 @@ export default async function EventDetailsPage({ params }: EventDetailsProps) {
                     <Activity size={10} />
                     {isActive ? 'Active' : 'Paused'}
                   </span>
+                  {gameDay && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-orange-500/20 text-orange-100 border border-orange-400/30">
+                      Game Day +{GAME_DAY_MARKUP_PCT}% Active
+                    </span>
+                  )}
                   {isStale && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-400/20 text-amber-200 border border-amber-300/30">
                       ⚠ Stale data
@@ -162,16 +178,21 @@ export default async function EventDetailsPage({ params }: EventDetailsProps) {
           </div>
           <div className="px-5 py-4">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Default Markup</p>
-            <p className={`text-2xl font-bold tabular-nums ${
-              pct > 0 ? 'text-rose-600' : pct < 0 ? 'text-blue-600' : 'text-slate-700'
-            }`}>{pct > 0 ? '+' : ''}{pct}%</p>
+            <div className="flex items-baseline gap-1.5">
+              <p className={`text-2xl font-bold tabular-nums ${
+                effectivePct > 0 ? 'text-rose-600' : effectivePct < 0 ? 'text-blue-600' : 'text-slate-700'
+              }`}>{effectivePct > 0 ? '+' : ''}{effectivePct}%</p>
+              {gameDay && (
+                <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-600">+{GAME_DAY_MARKUP_PCT} GD</span>
+              )}
+            </div>
           </div>
           <div className="px-5 py-4">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Standard Effective</p>
             <div className="flex items-baseline gap-1.5">
               <p className={`text-2xl font-bold tabular-nums ${
-                (pct + stdAdj) > 0 ? 'text-orange-600' : 'text-slate-700'
-              }`}>{(pct + stdAdj) > 0 ? '+' : ''}{pct + stdAdj}%</p>
+                (effectivePct + stdAdj) > 0 ? 'text-orange-600' : 'text-slate-700'
+              }`}>{(effectivePct + stdAdj) > 0 ? '+' : ''}{effectivePct + stdAdj}%</p>
               {stdAdj !== 0 && (
                 <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
                   stdAdj > 0 ? 'bg-orange-100 text-orange-600' : 'bg-sky-100 text-sky-600'
@@ -183,8 +204,8 @@ export default async function EventDetailsPage({ params }: EventDetailsProps) {
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Resale Effective</p>
             <div className="flex items-baseline gap-1.5">
               <p className={`text-2xl font-bold tabular-nums ${
-                (pct + resAdj) > 0 ? 'text-orange-600' : 'text-slate-700'
-              }`}>{(pct + resAdj) > 0 ? '+' : ''}{pct + resAdj}%</p>
+                (effectivePct + resAdj) > 0 ? 'text-orange-600' : 'text-slate-700'
+              }`}>{(effectivePct + resAdj) > 0 ? '+' : ''}{effectivePct + resAdj}%</p>
               {resAdj !== 0 && (
                 <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
                   resAdj > 0 ? 'bg-orange-100 text-orange-600' : 'bg-sky-100 text-sky-600'
@@ -257,14 +278,14 @@ export default async function EventDetailsPage({ params }: EventDetailsProps) {
             <InfoRow icon={<TrendingUp size={13} />} label="Markup">
               <div className="flex flex-wrap gap-1.5">
                 <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border tabular-nums ${
-                  pct > 0 ? 'bg-rose-50 border-rose-200 text-rose-700' : 'bg-slate-50 border-slate-200 text-slate-500'
-                }`}>Default {pct > 0 ? '+' : ''}{pct}%</span>
+                  effectivePct > 0 ? 'bg-rose-50 border-rose-200 text-rose-700' : 'bg-slate-50 border-slate-200 text-slate-500'
+                }`}>Default {effectivePct > 0 ? '+' : ''}{effectivePct}%{gameDay ? ` (incl. +${GAME_DAY_MARKUP_PCT}% GD)` : ''}</span>
                 <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border tabular-nums ${
                   stdAdj > 0 ? 'bg-orange-50 border-orange-200 text-orange-700' : stdAdj < 0 ? 'bg-sky-50 border-sky-200 text-sky-700' : 'bg-slate-50 border-slate-200 text-slate-400'
-                }`}>S {stdAdj > 0 ? '+' : ''}{stdAdj}% → {pct + stdAdj}%</span>
+                }`}>S {stdAdj > 0 ? '+' : ''}{stdAdj}% → {effectivePct + stdAdj}%</span>
                 <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border tabular-nums ${
                   resAdj > 0 ? 'bg-orange-50 border-orange-200 text-orange-700' : resAdj < 0 ? 'bg-sky-50 border-sky-200 text-sky-700' : 'bg-slate-50 border-slate-200 text-slate-400'
-                }`}>R {resAdj > 0 ? '+' : ''}{resAdj}% → {pct + resAdj}%</span>
+                }`}>R {resAdj > 0 ? '+' : ''}{resAdj}% → {effectivePct + resAdj}%</span>
               </div>
             </InfoRow>
           </dl>
