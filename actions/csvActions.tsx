@@ -381,6 +381,7 @@ export async function generateInventoryCsv(eventUpdateFilterMinutes: number = 0)
       'event_std_adj': 1,
       'event_resale_adj': 1,
       'event_default_pct': 1,
+      'event_availability_pct': 1,
     };
 
       // Enhanced cursor with better memory management and parallel processing
@@ -407,6 +408,7 @@ export async function generateInventoryCsv(eventUpdateFilterMinutes: number = 0)
             event_std_adj: { $ifNull: [{ $arrayElemAt: ['$eventDetails.standardMarkupAdjustment', 0] }, 0] },
             event_resale_adj: { $ifNull: [{ $arrayElemAt: ['$eventDetails.resaleMarkupAdjustment', 0] }, 0] },
             event_default_pct: { $ifNull: [{ $arrayElemAt: ['$eventDetails.priceIncreasePercentage', 0] }, 0] },
+            event_availability_pct: { $ifNull: [{ $arrayElemAt: ['$eventDetails.Availability_Percentage', 0] }, null] },
           }
         },
         { $project: projection },
@@ -534,6 +536,7 @@ interface ConsecutiveGroupDocument {
   event_std_adj?: number;
   event_resale_adj?: number;
   event_default_pct?: number;
+  event_availability_pct?: number | null;
   seats?: Array<{ number: string | number }>;
 }
 
@@ -620,6 +623,8 @@ function rowToRank(row: string): number {
 // Hardcoded risk markup percentages
 const FIRST_ROW_BOOST_PCT = 10;   // +10% for the lowest (front) row in each section
 const NO_UPGRADE_BOOST_PCT = 10;  // +10% when no upgrade listing with matching quantity exists
+const SCARCITY_THRESHOLD_PCT = 50; // Start boosting when availability drops below this %
+const SCARCITY_STEP_SIZE = 10;     // Every 10% below threshold → +10% markup
 
 // Helper function to process batches in parallel
 // Now section-aware: determines first-row boost and no-upgrade-path boost.
@@ -698,6 +703,16 @@ async function processBatch(batch: ConsecutiveGroupDocument[]): Promise<CsvRow[]
           adjustedListPrice = adjustedListPrice * (1 + NO_UPGRADE_BOOST_PCT / 100);
         }
       }
+    }
+
+    // ── Scarcity markup boost ───────────────────────────────────────
+    // When venue availability drops below 50%, add +10% for every 10% tier.
+    // e.g. 40% available → +10%, 30% → +20%, 20% → +30%, etc.
+    const availPct = doc.event_availability_pct;
+    if (availPct != null && availPct < SCARCITY_THRESHOLD_PCT) {
+      const tiersBelowThreshold = Math.ceil((SCARCITY_THRESHOLD_PCT - availPct) / SCARCITY_STEP_SIZE);
+      const scarcityBoostPct = tiersBelowThreshold * 10;
+      adjustedListPrice = adjustedListPrice * (1 + scarcityBoostPct / 100);
     }
 
     // Pre-compute expensive operations with null safety

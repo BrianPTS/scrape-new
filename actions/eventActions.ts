@@ -222,6 +222,9 @@ export async function getPaginatedEventsAdvanced(page: number = 1, limit: number
       case 'markup':
         sortCriteria = { priceIncreasePercentage: -orderMul };
         break;
+      case 'availability':
+        sortCriteria = { Availability_Percentage: -orderMul };
+        break;
       case 'updated':
       default:
         sortCriteria = { Last_Updated: -orderMul, updatedAt: -orderMul };

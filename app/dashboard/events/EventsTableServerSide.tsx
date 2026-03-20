@@ -17,6 +17,8 @@ interface EventData {
   Event_DateTime: string;
   Venue?: string;
   Available_Seats?: number;
+  Venue_Capacity?: number;
+  Availability_Percentage?: number | null;
   mapping_id?: string;
   Skip_Scraping?: boolean;
   Last_Updated?: string;
@@ -254,6 +256,7 @@ export default async function EventsTableServerSide({ searchParams }: PageProps)
                 <col className="w-[130px]" />
                 <col className="w-[72px]" />
                 <col className="w-[72px]" />
+                <col className="w-[64px]" />
                 <col className="w-[72px]" />
                 <col className="w-[130px]" />
                 <col className="w-[160px]" />
@@ -280,6 +283,11 @@ export default async function EventsTableServerSide({ searchParams }: PageProps)
                   </th>
                   <th className="px-3 py-2.5 text-right text-xs font-bold text-gray-600 uppercase tracking-wider">
                     Rows
+                  </th>
+                  <th className="px-3 py-2.5 text-right text-xs font-bold text-gray-600 uppercase tracking-wider">
+                    <SortableHeader sortKey="availability" currentSortBy={sortBy} currentSortOrder={sortOrder} sp={sp} className="justify-end">
+                      Avail
+                    </SortableHeader>
                   </th>
                   <th className="px-3 py-2.5 text-right text-xs font-bold text-gray-600 uppercase tracking-wider">
                     <SortableHeader sortKey="markup" currentSortBy={sortBy} currentSortOrder={sortOrder} sp={sp} className="justify-end">
@@ -368,6 +376,36 @@ export default async function EventsTableServerSide({ searchParams }: PageProps)
                         </div>
                       </td>
                       
+                      <td className="px-3 py-2 whitespace-nowrap text-right">
+                        {(() => {
+                          const avail = event.Availability_Percentage;
+                          if (avail == null) return <span className="text-xs text-gray-300">—</span>;
+                          const color = avail > 50
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : avail > 30
+                              ? 'bg-amber-50 text-amber-700 border-amber-200'
+                              : avail > 10
+                                ? 'bg-orange-50 text-orange-700 border-orange-200'
+                                : 'bg-red-50 text-red-700 border-red-200';
+                          // Calculate scarcity boost for display
+                          const scarcityBoost = avail < 50
+                            ? Math.ceil((50 - avail) / 10) * 10
+                            : 0;
+                          return (
+                            <div className="flex flex-col items-end gap-0.5">
+                              <span className={`inline-flex items-center text-[11px] font-bold px-1.5 py-0.5 rounded border tabular-nums ${color}`}>
+                                {avail}%
+                              </span>
+                              {scarcityBoost > 0 && (
+                                <span className="text-[9px] font-semibold text-orange-500 tabular-nums">
+                                  +{scarcityBoost}% boost
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </td>
+
                       <td className="px-3 py-2 whitespace-nowrap text-right">
                         <div className="inline-flex flex-col items-end gap-1.5">
                           {/* Base markup */}
@@ -507,6 +545,20 @@ export default async function EventsTableServerSide({ searchParams }: PageProps)
                         </div>
                         
                         <div className="flex flex-col items-end gap-1.5">
+                          {/* Availability */}
+                          {event.Availability_Percentage != null && (
+                            <div className="flex items-center justify-end gap-1">
+                              <span className="text-[10px] text-gray-400">avail</span>
+                              <span className={`inline-flex items-center text-[11px] font-bold px-1.5 py-0.5 rounded border tabular-nums ${
+                                event.Availability_Percentage > 50 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : event.Availability_Percentage > 30 ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                : event.Availability_Percentage > 10 ? 'bg-orange-50 text-orange-700 border-orange-200'
+                                : 'bg-red-50 text-red-700 border-red-200'
+                              }`}>
+                                {event.Availability_Percentage}%
+                              </span>
+                            </div>
+                          )}
                           <div className="flex items-center justify-end gap-2">
                             <TrendingUp size={14} className="text-gray-400" />
                             <span className={`font-bold text-xs px-2 py-0.5 rounded-full tabular-nums ${

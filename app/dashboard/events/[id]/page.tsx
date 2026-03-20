@@ -25,6 +25,8 @@ interface EventType {
   URL: string;
   Zone?: string;
   Available_Seats?: number;
+  Venue_Capacity?: number;
+  Availability_Percentage?: number | null;
   Skip_Scraping?: boolean;
   inHandDate?: string;
   priceIncreasePercentage?: number;
@@ -161,7 +163,7 @@ export default async function EventDetailsPage({ params }: EventDetailsProps) {
         </div>
 
       {/* ── Stat strip ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 bg-slate-50 border-t border-slate-100 divide-x divide-slate-100">
+        <div className="grid grid-cols-2 sm:grid-cols-6 bg-slate-50 border-t border-slate-100 divide-x divide-slate-100">
           <div className="px-5 py-4">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Standard</p>
             <p className="text-2xl font-bold tabular-nums text-blue-700" style={{ fontVariantNumeric: 'tabular-nums' }}>
@@ -175,6 +177,35 @@ export default async function EventDetailsPage({ params }: EventDetailsProps) {
               {resaleQty.toLocaleString()}
             </p>
             <span className="inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded border border-red-200 bg-red-50 text-red-600 mt-1">R qty</span>
+          </div>
+          <div className="px-5 py-4">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Availability</p>
+            {event.Availability_Percentage != null ? (
+              <>
+                <p className={`text-2xl font-bold tabular-nums ${
+                  event.Availability_Percentage > 50 ? 'text-emerald-600'
+                  : event.Availability_Percentage > 30 ? 'text-amber-600'
+                  : event.Availability_Percentage > 10 ? 'text-orange-600'
+                  : 'text-red-600'
+                }`} style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  {event.Availability_Percentage}%
+                </p>
+                <div className="flex flex-col gap-0.5 mt-1">
+                  {event.Venue_Capacity ? (
+                    <span className="text-[10px] text-slate-400">
+                      {(event.Available_Seats ?? 0).toLocaleString()} / {event.Venue_Capacity.toLocaleString()} seats
+                    </span>
+                  ) : null}
+                  {event.Availability_Percentage < 50 && (
+                    <span className="inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded border border-orange-200 bg-orange-50 text-orange-600">
+                      +{Math.ceil((50 - event.Availability_Percentage) / 10) * 10}% scarcity boost
+                    </span>
+                  )}
+                </div>
+              </>
+            ) : (
+              <p className="text-2xl font-bold text-slate-300">—</p>
+            )}
           </div>
           <div className="px-5 py-4">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Default Markup</p>
