@@ -77,14 +77,15 @@ const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
       icon: <Download className="w-5 h-5" />,
       isActive: true,
     },
+    {
+      path: '/dashboard/sales',
+      label: 'Sales Analytics',
+      icon: <ShoppingCart className="w-5 h-5" />,
+      isActive: true,
+    },
   ];
 
   const comingSoonItems = [
-    {
-      label: 'Orders',
-      icon: <ShoppingCart className="w-5 h-5" />,
-      description: 'Manage customer orders'
-    },
      {
       label: 'Proxies',
       icon: <SignalHigh className="w-5 h-5" />,
